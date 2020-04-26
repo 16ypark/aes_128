@@ -1,3 +1,8 @@
+// 20160809 박유화
+// 코드 environment, requirement
+// This assignment is built on an open source specified below.
+// aes.c, aes.h, main.c, makefile are included in the submission
+
 /*
  *
  * Chinese Academy of Sciences
@@ -12,84 +17,230 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <time.h>
+#include <string.h>
 
 #include "aes.h"
 
+// This is a record of number of 1s in 4-bit bynary numbers (0b0001, ..., 0b1111).
+int num_to_bits[16] = { 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4 };
+
+// This function counts the number of 1s in a binary number t.
+uint8_t countsetbits(uint8_t t) {
+    if (t == 0) return num_to_bits[0];
+    
+    int tail = t & 0xf;
+    return num_to_bits[tail] + countsetbits(t >> 4);
+}
+
+// This function gets the hamming distance between two numbers in form of array of bytes by using countsetbits function.
+uint8_t gethamdist(uint8_t *a, uint8_t *b) {
+    uint8_t c = 0;
+    // for each byte
+    for (int i = 0; i < AES_BLOCK_SIZE; i++) {
+        c += countsetbits(a[i] ^ b[i]);
+    }
+    return c;
+}
+
+/* This function does the parts (i) and (ii) of the assignment.
+ It was made as a function because it is repeated in parts (a) and (b) of the assignment. */
+void doencrypt(uint8_t *roundkeys, uint8_t *ciphertext, uint8_t *newciphertext, uint8_t *plaintext, uint8_t *newplaintext, uint8_t *key, uint8_t **addroundkeys, uint8_t **newaddroundkeys, FILE *fptr) {
+    uint8_t i, r;
+    uint8_t num, idx, bit_idx, b;
+    
+    // print PT
+    fprintf(fptr, "PT = ");
+    for (i = 0; i < AES_BLOCK_SIZE; i++) {
+        fprintf(fptr, "%.2X", plaintext[i]);
+    }
+    fprintf(fptr, "\n");
+    
+    // print Key
+    fprintf(fptr, "Key = ");
+    for (i = 0; i < AES_BLOCK_SIZE; i++) {
+        fprintf(fptr, "%.2X", key[i]);
+    }
+    fprintf(fptr, "\n");
+
+    // key schedule
+    aes_key_schedule_128(key, roundkeys);
+
+    // encryption
+    aes_encrypt_128(roundkeys, plaintext, ciphertext, addroundkeys);
+    // print CT
+    fprintf(fptr, "CT = ");
+    for (i = 0; i < AES_BLOCK_SIZE; i++) {
+        fprintf(fptr, "%.2X", ciphertext[i]);
+    }
+    fprintf(fptr, "\n");
+
+
+    // decryption
+    aes_decrypt_128(roundkeys, ciphertext, plaintext);
+    // print decrypted ciphertext
+    fprintf(fptr, "Decrypted = ");
+    for (i = 0; i < AES_BLOCK_SIZE; i++) {
+        fprintf(fptr, "%.2X", plaintext[i]);
+    }
+    fprintf(fptr, "\n\n");
+    
+    // generating random number
+    num = rand() % 128;
+    
+    idx = num / 8;
+    bit_idx = num % 8;
+    // get the position of the bit to flip
+    b = 1 << (7 - bit_idx);
+    
+    // if the bit is 0
+    if ((newplaintext[idx] & b) == 0) {
+        newplaintext[idx] |= b;
+    // else if the bit is 1
+    } else {
+        newplaintext[idx] &= ~b;
+    }
+    
+    // get the hamming distance for each rounds
+    fprintf(fptr, "Hamming distance when %dth bit is changed\n\n", num + 1);
+    
+    fprintf(fptr, "PT : ");
+    
+    fprintf(fptr, "%.2X ", gethamdist(plaintext, newplaintext));
+    
+    for (i = 0; i < AES_BLOCK_SIZE; i++) {
+        fprintf(fptr, "%.2X", plaintext[i]);
+    }
+    fprintf(fptr, " ");
+    
+    for (i = 0; i < AES_BLOCK_SIZE; i++) {
+        fprintf(fptr, "%.2X", newplaintext[i]);
+    }
+    fprintf(fptr, "\n");
+    
+    // encryption of the plaintext with a flipped bit
+    aes_encrypt_128(roundkeys, newplaintext, newciphertext, newaddroundkeys);
+    // for each round...
+    for ( r = 0; r < 9; r++ ) {
+        fprintf(fptr, "R%d : %.2X ", r + 1, gethamdist(addroundkeys[r], newaddroundkeys[r]));
+        for (i = 0; i < AES_BLOCK_SIZE; i++) {
+            fprintf(fptr, "%.2X", *(*(addroundkeys + r) + i));
+        }
+        fprintf(fptr, " ");
+        for (i = 0; i < AES_BLOCK_SIZE; i++) {
+            fprintf(fptr, "%.2X", *(*(newaddroundkeys + r) + i));
+        }
+        fprintf(fptr, "\n");
+    }
+    
+    // final ciphertext
+    fprintf(fptr, "CT : %.2X ", gethamdist(ciphertext, newciphertext));
+    for (i = 0; i < AES_BLOCK_SIZE; i++) {
+        fprintf(fptr, "%.2X", ciphertext[i]);
+    }
+    fprintf(fptr, " ");
+    for (i = 0; i < AES_BLOCK_SIZE; i++) {
+        fprintf(fptr, "%.2X", newciphertext[i]);
+    }
+    fprintf(fptr, "\n\n");
+
+}
+
 int main(int argc, char *argv[]) {
+    uint8_t i, n;
+    
+    FILE *fptr;
 
-	uint8_t i, r;
+    // create and open a file named output.txt to write to in the current directory
+    fptr = fopen("output.txt","w");
 
+    if (fptr == NULL)
+    {
+       printf("Error!");
+       exit(1);
+    }
+
+    
+    srand ( time(NULL) );
+
+    /* Initialization before passing the parameters to doencrypt function. */
+    
 	/* 128 bit key */
 	uint8_t key[] = {
-		//0x0f, 0x15, 0x71, 0xc9, 0x47, 0xd9, 0xe8, 0x59, 
-		//0x0c, 0xb7, 0xad, 0xd6, 0xaf, 0x7f, 0x67, 0x98,
-		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-		0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 
 	};
 
 	uint8_t plaintext[] = {
-		//0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
-		//0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10,
-		0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
-		0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 	};
 
  
 	uint8_t ciphertext[AES_BLOCK_SIZE];
+    uint8_t newciphertext[AES_BLOCK_SIZE];
 
-	const uint8_t const_cipher[AES_BLOCK_SIZE] = {
-		//0xff, 0x0b, 0x84, 0x4a, 0x08, 0x53, 0xbf, 0x7c,
-		//0x69, 0x34, 0xab, 0x43, 0x64, 0x14, 0x8f, 0xb9,
-		0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30,
-		0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4, 0xc5, 0x5a,
-	};
-	
+    uint8_t newplaintext[16];
+    memcpy(newplaintext, plaintext, sizeof(plaintext));
+    
 	uint8_t roundkeys[AES_ROUND_KEY_SIZE];
+    
+    uint8_t **addroundkeys = (uint8_t**)calloc(9, sizeof(uint8_t*));
+    uint8_t **newaddroundkeys = (uint8_t**)calloc(9, sizeof(uint8_t*));
+    
+    for (i = 0; i < AES_BLOCK_SIZE; i++) {
+        *(addroundkeys + i) = (uint8_t*)calloc(16, sizeof(uint8_t));
+        *(newaddroundkeys + i) = (uint8_t*)calloc(16, sizeof(uint8_t));
+    }
 
-	printf("\n--------------------------------------------------------\n");
-	printf("Plain text:\n");
-	for (i = 0; i < AES_BLOCK_SIZE; i++) {
-		printf("%2x ", plaintext[i]);
-	}
-	printf("\n\n");	
+    fprintf(fptr,"[a]\n");
+    // call doencrypt for part [a]
+    doencrypt(roundkeys, ciphertext, newciphertext, plaintext, newplaintext, key, addroundkeys, newaddroundkeys, fptr);
+    
+    // ---------------------------------------------------------------------------------------
+    //[b]
+    
+    /* Initialization before passing the parameters to doencrypt function. */
+    
+    memset(roundkeys, 0, sizeof(roundkeys));
+    memset(ciphertext, 0, sizeof(ciphertext));
+    memset(newciphertext, 0, sizeof(newciphertext));
+    memset(plaintext, 0, sizeof(plaintext));
+    memset(newplaintext, 0, sizeof(newplaintext));
+    memset(key, 0, sizeof(key));
+    
+    for (i = 0; i < 9; i++) {
+        free(*(addroundkeys + i));
+        free(*(newaddroundkeys + i));
+    }
+    free(addroundkeys);
+    free(newaddroundkeys);
+    
+    uint8_t **b_addroundkeys = (uint8_t**)calloc(9, sizeof(uint8_t*));
+    uint8_t **b_newaddroundkeys = (uint8_t**)calloc(9, sizeof(uint8_t*));
+    
+    for (i = 0; i < AES_BLOCK_SIZE; i++) {
+        *(b_addroundkeys + i) = (uint8_t*)calloc(16, sizeof(uint8_t));
+        *(b_newaddroundkeys + i) = (uint8_t*)calloc(16, sizeof(uint8_t));
+    }
 
-	// key schedule
-	aes_key_schedule_128(key, roundkeys);
-	printf("Round Keys:\n");
-	for ( r = 0; r <= AES_ROUNDS; r++ ) {
-		for (i = 0; i < AES_BLOCK_SIZE; i++) {
-			printf("%2x ", roundkeys[r*AES_BLOCK_SIZE+i]);
-		}
-		printf("\n");
-	}
-	printf("\n");
+    for (i = 0; i < AES_BLOCK_SIZE; i++) {
+        n = rand() % 256;
+        plaintext[i] = n;
+        n = rand() % 256;
+        key[i] = n;
+    }
+    memcpy(newplaintext, plaintext, sizeof(plaintext));
 
-	// encryption
-	aes_encrypt_128(roundkeys, plaintext, ciphertext);
-	printf("Cipher text:\n");
-	for (i = 0; i < AES_BLOCK_SIZE; i++) {
-		printf("%2x ", ciphertext[i]);
-	}
-	for (i = 0; i < AES_BLOCK_SIZE; i++) {
-		if ( ciphertext[i] != const_cipher[i] ) { break; }
-	}
-	if ( AES_BLOCK_SIZE != i ) { printf("\nENCRYPT WRONG\n\n"); }
-	else { printf("\nENCRYPT CORRECT\n\n"); }
-
-
-	// decryption
-	aes_decrypt_128(roundkeys, ciphertext, ciphertext);
-	printf("Plain text:\n");
-	for (i = 0; i < AES_BLOCK_SIZE; i++) {
-		printf("%2x ", ciphertext[i]);
-	}
-	for (i = 0; i < AES_BLOCK_SIZE; i++) {
-		if ( ciphertext[i] != plaintext[i] ) { break; }
-	}
-	if ( AES_BLOCK_SIZE != i ) { printf("\nDECRYPT WRONG\n\n"); }
-	else { printf("\nDECRYPT CORRECT\n\n"); }
-
+    fprintf(fptr, "[b]\n");
+    // call doencrypt function for part [b]
+    doencrypt(roundkeys, ciphertext, newciphertext, plaintext, newplaintext, key, b_addroundkeys, b_newaddroundkeys, fptr);
+    
+    // close output.txt
+    fclose(fptr);
 	return 0;
 
 }

@@ -1,3 +1,8 @@
+// 20160809 박유화
+// 코드 environment, requirement
+// This assignment is built on an open source specified below.
+// aes.c, aes.h, main.c, makefile are included in the submission
+
 /*
  *
  * Chinese Academy of Sciences
@@ -178,10 +183,11 @@ void aes_key_schedule_128(const uint8_t *key, uint8_t *roundkeys) {
     }
 }
 
-void aes_encrypt_128(const uint8_t *roundkeys, const uint8_t *plaintext, uint8_t *ciphertext) {
+void aes_encrypt_128(const uint8_t *roundkeys, const uint8_t *plaintext, uint8_t *ciphertext, uint8_t **addroundkeys) {
 
     uint8_t tmp[16], t;
     uint8_t i, j;
+    int r = 0;
 
     // first AddRoundKey
     for ( i = 0; i < AES_BLOCK_SIZE; ++i ) {
@@ -213,9 +219,14 @@ void aes_encrypt_128(const uint8_t *roundkeys, const uint8_t *plaintext, uint8_t
 
         // AddRoundKey
         for ( i = 0; i < AES_BLOCK_SIZE; ++i ) {
-            *(ciphertext+i) ^= *roundkeys++;
+            *(ciphertext+i) ^= *roundkeys;
+            // add this to the array here
+//            printf("hi!\n");
+            *(*(addroundkeys + r) + i) = *(ciphertext + i);
+//            printf("r is: %d", r);
+            roundkeys++;
         }
-
+        r++;
     }
     
     // last round
